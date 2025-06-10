@@ -4,6 +4,8 @@ import argparse
 import arxiv
 import sys
 import re
+from itertools import permutations
+from typing import List
 from urllib.parse import urlparse
 from datetime import datetime
 import webbrowser
@@ -57,6 +59,21 @@ def init_db():
     conn.close()
 
 
+def all_comma_separated(arr: List[str]) -> List[str]:
+    """
+    Generate all comma-separated strings from the input list,
+    of lengths 1 through len(arr), with no repeated elements.
+
+    :param arr: List of unique strings.
+    :return: List of comma-separated strings.
+    """
+    results: List[str] = []
+    for r in range(1, len(arr) + 1):
+        for perm in permutations(arr, r):
+            results.append(", ".join(perm))
+    return results
+
+
 def get_all_tags() -> list[str]:
         # get all tags from the database
         conn = sqlite3.connect(DB_PATH)
@@ -65,6 +82,18 @@ def get_all_tags() -> list[str]:
         tags = c.fetchall()
         conn.close()
         return [f"{name}" for _, name in tags]
+
+def get_all_tags_perm() -> list[str]:
+        # get all tags from the database
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT id, name FROM tags ORDER BY name')
+        tags = c.fetchall()
+        conn.close()
+        tags = [name for _, name in tags]
+        tags = all_comma_separated(tags)
+        return tags
+
 
 
 
@@ -81,7 +110,7 @@ class Paper(ListItem):
 
 class PaperTagging(Input):
     def __init__(self, arxiv_id: str, id: str) -> None:
-        super().__init__(id=id, placeholder="Enter tags for the paper (comma-separated)")
+        super().__init__(id=id, placeholder="Enter tags for the paper (comma-separated)", suggester=SuggestFromList(get_all_tags_perm(), case_sensitive=False))
         self.arxiv_id = arxiv_id 
 
 
@@ -164,7 +193,7 @@ class BabelApp(App):
     # prompting for a set of tags to filter the papers by
     def action_show_tags(self):
         # prompt for a tag to filter the papers by
-        tag_input = Input(placeholder="Enter tag to filter by (leave empty to reset)", id="tag_filter", suggester=SuggestFromList(get_all_tags(), case_sensitive=False))
+        tag_input = Input(placeholder="Enter tag to filter by (leave empty to reset)", id="tag_filter", suggester=SuggestFromList(get_all_tags_perm(), case_sensitive=False))
         self.mount(tag_input)
         tag_input.focus()
 
