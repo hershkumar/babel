@@ -121,6 +121,25 @@ class BabelApp(App):
         self.filter_tag = None
         # load the papers table
         self.load_table()
+    # prompting for a set of tags to filter the papers by
+    def action_show_tags(self):
+        # prompt for a tag to filter the papers by
+        tag_input = Input(placeholder="Enter tag to filter by (leave empty to reset)", id="tag_filter")
+        self.mount(tag_input)
+        tag_input.focus()
+
+    # reset the table to show all papers
+    def action_reset(self):
+        self.filter_query = None
+        self.filter_tag = None
+        self.log_message("Resetting filters.", 'information')
+        self.load_table()
+
+    def action_show_search(self):
+        # prompt for a search query
+        search_input = Input(placeholder="Enter search query (title, author, etc.)", id="search_input")
+        self.mount(search_input)
+        search_input.focus()
 
 
     def load_table(self) -> None:
@@ -412,6 +431,26 @@ class BabelApp(App):
                 self.remove_paper(aid)
             else:
                 self.log_message("Removal cancelled.")
+        elif event.input.id == "tag_filter":
+            # get the tags to filter by 
+            tag = event.input.value.strip()
+            if not tag:
+                self.log_message("Resetting tag filter.", 'information')
+                self.filter_tag = None
+            else:
+                self.log_message(f"Filtering by tag: {tag}", 'information')
+                self.filter_tag = tag
+            self.load_table()
+        elif event.input.id == "search_input":
+            # get the search query
+            query = event.input.value.strip()
+            if not query:
+                self.log_message("Resetting search query.", 'information')
+                self.filter_query = None
+            else:
+                self.log_message(f"Searching for: {query}", 'information')
+                self.filter_query = query
+            self.load_table()
         else:
             link = event.input.value.strip()
             self.add_paper(link)
