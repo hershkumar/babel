@@ -9,16 +9,19 @@ from datetime import datetime
 import webbrowser
 from textual.app import App, ComposeResult
 from textual.widgets import Header, Footer, DataTable, Input, ListView, ListItem, Label
+from textual.suggester import SuggestFromList
 from textual.containers import Container
 
-
-#Modern arxiv ids
-ARXIV_REGEX_NEW = r'\d{4}\.\d{4,5}(v\d+)?'
-# Old arxiv ids #TODO
-ARXIV_REGEX_OLD = re.compile(r'arxiv.org/[^\/]+/([\w-]+\/[\w\.]+?)(\.pdf)?$', re.I)
-ARXIV_REGEX = ARXIV_REGEX_NEW or ARXIV_REGEX_OLD
-ARXIV_REGEX = r'([\w-]+\/[\w\.]+?)(\.pdf)?$' 
 ARXIV_REGEX = r'\b([\w-]+\/[\w\.]+?)(\.pdf)?$'
+
+def strip_url(arg):
+    arg = arg.strip()
+    arg = arg.removeprefix("http://arxiv.org/abs/")
+    arg = arg.removeprefix("https://arxiv.org/abs/")
+    arg = arg.removeprefix("https://arxiv.org/pdf/")
+    arg = arg.removeprefix("http://arxiv.org/pdf/")
+    return arg.strip()
+
 
 DB_PATH = 'babel.db'
 # instantiate a single Client to avoid deprecated Search.results()
@@ -53,6 +56,18 @@ def init_db():
     conn.commit()
     conn.close()
 
+
+def get_all_tags() -> list[str]:
+        # get all tags from the database
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT id, name FROM tags ORDER BY name')
+        tags = c.fetchall()
+        conn.close()
+        return [f"{name}" for _, name in tags]
+
+
+
 class Paper(ListItem):
     def __init__(self, label: str, arxiv_id: str) -> None:
         super().__init__()
@@ -63,11 +78,11 @@ class Paper(ListItem):
         yield Label(self.label)
         yield Label(self.arxiv_id)
 
+
 class PaperTagging(Input):
     def __init__(self, arxiv_id: str, id: str) -> None:
         super().__init__(id=id, placeholder="Enter tags for the paper (comma-separated)")
-        self.arxiv_id = arxiv_id
-
+        self.arxiv_id = arxiv_id 
 
 
 class BabelApp(App):
@@ -77,19 +92,29 @@ class BabelApp(App):
         background: rgba(0,0,0,0.5);
         }
         #search_input, #tag_table {
-        width: 60%;
+        width: 100%;
         align: center bottom;
         max-height: 50%;
         }
-
+        #tag_filter, #tag_modification, #confirm_remove {
+        width: 100%;
+        }
+        #papers {
+            width: 100%;
+            height: 50%;
+            max-height: 95%;
+            overflow-y: auto;    
+        }
         ListView {
             height: auto;
-            margin: 2 2;
+            max-height: 60%;
+            margin: 1 1;
         }
 
         Label {
-            padding: 1 2;
+            padding: 1 1;
         }
+        
     """
 
     BINDINGS = [
@@ -100,7 +125,8 @@ class BabelApp(App):
         ("l", "cursor_right", "→"),
         ("/", "show_search", "Search"),
         ("t", "show_tags", "Tag Filter"),
-        ("r", "reset", "Reset"),
+        ('r', "reset", "Reset"),
+        ('escape', 'reset', 'Reset'),
         ("a", "add_paper", "Add Paper"),
         ("x", "remove_paper", "Remove Paper"),
         ("e", "edit_tags", "Edit Tags"),
@@ -121,10 +147,24 @@ class BabelApp(App):
         self.filter_tag = None
         # load the papers table
         self.load_table()
+
+    def get_tag_from_id(self, tag_id: int) -> str:
+        # get the tag name from the database by ID
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('SELECT name FROM tags WHERE id=?', (tag_id,))
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return row[0]
+        return ""
+
+    
+
     # prompting for a set of tags to filter the papers by
     def action_show_tags(self):
         # prompt for a tag to filter the papers by
-        tag_input = Input(placeholder="Enter tag to filter by (leave empty to reset)", id="tag_filter")
+        tag_input = Input(placeholder="Enter tag to filter by (leave empty to reset)", id="tag_filter", suggester=SuggestFromList(get_all_tags(), case_sensitive=False))
         self.mount(tag_input)
         tag_input.focus()
 
@@ -132,7 +172,7 @@ class BabelApp(App):
     def action_reset(self):
         self.filter_query = None
         self.filter_tag = None
-        self.log_message("Resetting filters.", 'information')
+        # self.log_message("Resetting filters.", 'information')
         self.load_table()
 
     def action_show_search(self):
@@ -258,14 +298,14 @@ class BabelApp(App):
     # adds a paper based on user input
     def add_paper(self, user_inp):
         # check if the input is a URL or arXiv ID
-        aid = self.extract_arxiv_id(user_inp)
-        
+        # aid = self.extract_arxiv_id(user_inp)
+        aid = strip_url(user_inp)
         # if the extracted content does not look like an arXiv ID, do a title search
         if not re.match(ARXIV_REGEX, user_inp):
-            search = arxiv.Search(query=f'ti:{aid}', max_results=5)
+            search = arxiv.Search(query=f'ti:{aid}', max_results=20)
             results = list(client.results(search))
             if not results:
-                # check the aid list
+                # check the aid list, in case it matches something
                 search = arxiv.Search(id_list=[aid])
                 results = list(client.results(search))
                 if not results:
@@ -315,7 +355,7 @@ class BabelApp(App):
             ))
             pid = c.lastrowid
             conn.commit()
-            self.log_message(f"Added paper “{entry.title}” ({entry.get_short_id()}).", 'information')
+            # self.log_message(f"Added paper “{entry.title}” ({entry.get_short_id()}).", 'information')
         except sqlite3.IntegrityError:
             #TODO: I think this is redundant now
             c.execute('SELECT id FROM papers WHERE arxiv_id=?', (entry.get_short_id(),))
@@ -332,6 +372,20 @@ class BabelApp(App):
         
         return 0 # exit code for success
 
+    def purge_unused_tags(self):
+        """
+        Remove tags that are not associated with any papers.
+        This is useful for cleaning up the database.
+        """
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute('''
+            DELETE FROM tags
+            WHERE id NOT IN (SELECT DISTINCT tag_id FROM paper_tags)
+        ''')
+        conn.commit()
+        conn.close()
+        return 
 
     def get_current_tags(self, arxiv_id:str) -> str:
         """
@@ -366,6 +420,7 @@ class BabelApp(App):
         tag_input.value = current_tags
         self.mount(tag_input)
         tag_input.focus()
+
         return 0
 
     # removing a paper, no confirmation
@@ -378,7 +433,7 @@ class BabelApp(App):
         c.execute('DELETE FROM papers WHERE arxiv_id=?', (aid,))
         conn.commit()
         conn.close()
-        self.log_message(f"Removed paper with arXiv ID: {aid}", 'information')
+        # self.log_message(f"Removed paper with arXiv ID: {aid}", 'information')
         self.load_table()
         return
 
@@ -390,6 +445,7 @@ class BabelApp(App):
             return -1
         arxiv_id = table.get_cell_at(table.cursor_coordinate)
         # confirm removal
+        #TODO: This should not be a PaperTagging, maybe a yes/no button instead
         confirm = PaperTagging(id="confirm_remove", arxiv_id=arxiv_id)
         confirm.placeholder = f"Are you sure you want to remove this paper? (y/N)"
         self.mount(confirm)
@@ -399,8 +455,11 @@ class BabelApp(App):
     async def on_list_view_selected(self, event: ListView.Selected) -> None: 
         event.list_view.remove()
         aid = event.item.arxiv_id #type: ignore
-        self.log_message(f"Selected paper: {aid}", 'information')
+        # self.log_message(f"Selected paper: {aid}", 'information')
         self.add_paper_internal(aid)
+
+
+
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         event.input.remove()
@@ -412,7 +471,7 @@ class BabelApp(App):
                 self.log_message("No tags entered.", 'warning')
                 return
             else:
-                self.log_message(f"Adding tags to paper {aid}: {tags}", 'information')
+                # self.log_message(f"Adding tags to paper {aid}: {tags}", 'information')
                 self.add_tags(aid, tags)
         elif event.input.id == "tag_modification":
             aid = event.input.arxiv_id #type: ignore
@@ -421,13 +480,13 @@ class BabelApp(App):
                 self.log_message("No tags entered.", 'warning')
                 return
             else:
-                self.log_message(f"Modifying tags for paper {aid}: {tags}", 'information')
+                # self.log_message(f"Modifying tags for paper {aid}: {tags}", 'information')
                 self.set_tags(aid, tags)
         elif event.input.id == "confirm_remove":
             # remove the paper
             aid = event.input.arxiv_id #type: ignore
             if event.input.value.strip().lower() in ('y', 'yes'):
-                self.log_message(f"Removing paper {aid}.")
+                # self.log_message(f"Removing paper {aid}.")
                 self.remove_paper(aid)
             else:
                 self.log_message("Removal cancelled.")
@@ -438,7 +497,7 @@ class BabelApp(App):
                 self.log_message("Resetting tag filter.", 'information')
                 self.filter_tag = None
             else:
-                self.log_message(f"Filtering by tag: {tag}", 'information')
+                # self.log_message(f"Filtering by tag: {tag}", 'information')
                 self.filter_tag = tag
             self.load_table()
         elif event.input.id == "search_input":
@@ -448,13 +507,15 @@ class BabelApp(App):
                 self.log_message("Resetting search query.", 'information')
                 self.filter_query = None
             else:
-                self.log_message(f"Searching for: {query}", 'information')
+                # self.log_message(f"Searching for: {query}", 'information')
                 self.filter_query = query
             self.load_table()
         else:
             link = event.input.value.strip()
             self.add_paper(link)
             self.load_table()
+        # remove any unused tags from the database
+        self.purge_unused_tags()
 
 def tui():
     BabelApp().run()    
