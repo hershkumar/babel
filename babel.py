@@ -130,7 +130,6 @@ class BabelApp(App):
         }
         #papers {
             width: 100%;
-            height: 50%;
             max-height: 95%;
             overflow-y: auto;    
         }
@@ -160,6 +159,7 @@ class BabelApp(App):
         ("x", "remove_paper", "Remove Paper"),
         ("e", "edit_tags", "Edit Tags"),
         ("o", "open_paper", "Open Paper"),
+        ("space", "open_pdf", "Open PDF"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -214,6 +214,7 @@ class BabelApp(App):
     def load_table(self) -> None:
         table = self.query_one("#papers", DataTable)
         table.clear(columns=True)
+        table.zebra_stripes = True
         table.add_columns("ArXiv ID", "Title", "Authors", "Tags")
         table.cursor_type = "row"
 
@@ -236,11 +237,14 @@ class BabelApp(App):
         sql += " GROUP BY p.id ORDER BY p.published DESC"
 
         conn = sqlite3.connect(DB_PATH)
+        # truncate the title to a total of 50 characters, including the ellipsis
+        truncation = 60
+        trunc = lambda title: (title[:truncation-3] + '...') if len(title) > truncation else title
         for aid, title, authors, tags in conn.execute(sql, params):
             names = [n.strip() for n in authors.split(", ")] if authors else []
             last5 = [n.split()[-1] for n in names[:5]]
             disp_auth = ", ".join(last5)
-            table.add_row(aid, title, disp_auth, tags)
+            table.add_row(aid, trunc(title), disp_auth, tags)
         conn.close()
 
     # writes a notification message as a toast widget
@@ -266,10 +270,18 @@ class BabelApp(App):
         arxiv_id = table.get_cell_at(table.cursor_coordinate)
         url = f"https://arxiv.org/abs/{arxiv_id}"
         webbrowser.open(url)
+        return
+
+    def action_open_pdf(self):
+        table = self.query_one("#papers", DataTable)
+        arxiv_id = table.get_cell_at(table.cursor_coordinate)
+        url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+        webbrowser.open(url)
+        return
 
     def action_add_paper(self):
         # prompt for arXiv ID, title, or url
-        aid = Input(placeholder="Enter arXiv ID, title, or url to add")
+        aid = Input(placeholder="Enter arXiv ID, title, author, or url to add")
         self.mount(aid)
         aid.focus()
     

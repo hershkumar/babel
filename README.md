@@ -3,17 +3,19 @@
 ~ Jorge Luis Borges, "The Library of Babel"
 
 ## Babel
-Personal paper storage and management system.
+Personal paper storage and management system. Supports tagging, searching, and viewing of papers from arxiv.org.
 
 ### TODO:
 - [x] Implement tag filtering for display
 - [x] Implement search functionality
 - [x] When the last paper with a tag is deleted, remove the tag from database entirely
 - [x] Instead of a tag selector ui, have a suggestor that autocompletes based on existing tags
-- [ ] Space opens up a summary window about the paper (?)
-- [ ] Stress test more arxiv links
-- [ ] Think about how to deal with papers outside of arxiv, maybe somehow search for them based on title?
-- [ ] Stress test the search and tagging functionality
-- [ ] Try to speed up the arxiv api calls
+- [ ] Implement cancelling adding papers or tagging
 - [ ] Figure out the CSS formatting for all the elements
-- [ ] Figure out smooth scrolling for the selection when picking a paper
+- [x] Space opens up the pdf directly, o opens the arxiv page
+- [ ] Stress test more arxiv links
+- [ ] Stress test the search and tagging functionality
+- [ ] For APS papers, get the doi from the aps link, then use that to get the arxiv id. arxiv has a doi search?
+- [ ] Try to speed up the arxiv api calls (?)
+- [x] Figure out smooth scrolling for the selection when picking a paper
+- [ ] Download the papers to a local folder for offline access? I assume python can open local pdfs.
