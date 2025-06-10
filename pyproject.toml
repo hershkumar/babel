@@ -1,0 +1,13 @@
+[project]
+name = "babel"
+version = "0.1.0"
+description = "Personal arXiv Paper Storage and Tagging System"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "argparse>=1.4.0",
+    "arxiv>=2.2.0",
+    "datetime>=5.5",
+    "textual>=3.3.0",
+    "textual-dev>=1.7.0",
+]
