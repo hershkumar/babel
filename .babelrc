@@ -1,0 +1,4 @@
+# babel.py config file
+
+# babel.db location
+DB_PATH="~/Documents/work/babel.db"

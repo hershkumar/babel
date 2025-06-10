@@ -24,7 +24,7 @@ def strip_url(arg):
     arg = arg.removeprefix("http://arxiv.org/pdf/")
     return arg.strip()
 
-
+#TODO: pull the db path from the .babelrc file
 DB_PATH = 'babel.db'
 # instantiate a single Client to avoid deprecated Search.results()
 client = arxiv.Client()
